@@ -25,8 +25,9 @@ private:
     vector<float> r_plus_sum;
     vector<float> cum_r_plus;
     //vector<float> cum_r_plus_sum;
-    //vector<float> current_strategy;
-    //vector<float> average_strategy;
+    // Strategy cache to avoid repeated allocation and recomputation
+    vector<float> current_strategy_cache;
+    bool strategy_dirty = true;
 public:
     DiscountedCfrTrainable(vector<PrivateCards> *privateCards,
                            ActionNode &actionNode);

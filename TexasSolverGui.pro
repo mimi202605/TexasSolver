@@ -56,7 +56,8 @@ QMAKE_CXXFLAGS += -fopenmp
 QMAKE_LFLAGS += -fopenmp
 }
 
-QMAKE_CXXFLAGS_RELEASE *= -O2
+QMAKE_CXXFLAGS_RELEASE *= -O3 -march=native -flto
+QMAKE_LFLAGS_RELEASE *= -flto
 QMAKE_LFLAGS += -v
 
 SOURCES += \

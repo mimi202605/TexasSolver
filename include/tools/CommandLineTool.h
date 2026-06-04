@@ -37,10 +37,11 @@ private:
     string range_ip;
     string range_oop;
     string board;
-    float accuracy;
+    float accuracy=0.5;
     int max_iteration=100;
     int use_isomorphism=0;
-    int print_interval=10;
+    int use_halffloats=2;
+    int print_interval=25;
     int dump_rounds = 1;
     shared_ptr<GameTreeBuildingSettings> gtbs;
 };

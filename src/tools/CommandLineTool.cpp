@@ -152,6 +152,8 @@ void CommandLineTool::processCommand(string input) {
         this->max_iteration = stoi(paramstr);
     }else if(command == "set_use_isomorphism"){
         this->use_isomorphism = stoi(paramstr);
+    }else if(command == "set_use_halffloats"){
+        this->use_halffloats = stoi(paramstr);
     }else if(command == "set_print_interval"){
         this->print_interval = stoi(paramstr);
     }else if(command == "start_solve"){
@@ -167,7 +169,7 @@ void CommandLineTool::processCommand(string input) {
                 -1,
                 this->accuracy,
                 this->use_isomorphism,
-                0, // TODO: enable half float option for command line tool
+                this->use_halffloats,
                 this->thread_number
         );
     }else if(command == "dump_result"){

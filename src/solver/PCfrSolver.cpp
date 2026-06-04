@@ -787,16 +787,17 @@ void PCfrSolver::train() {
     uint64_t endtime = timeSinceEpochMillisec();
 
     for(int i = 0;i < this->iteration_number;i++){
-        for(int player_id = 0;player_id < this->player_number;player_id ++) {
-            this->round_deal = vector<int>{-1,-1,-1,-1};
-            //#pragma omp parallel
+        // Alternating updates: only update one player per iteration
+        // This halves the work per iteration and converges faster in practice
+        int player_id = i % this->player_number;
+        this->round_deal = vector<int>{-1,-1,-1,-1};
+        //#pragma omp parallel
+        {
+            //#pragma omp single
             {
-                //#pragma omp single
-                {
-                    //this->distributing_task = true;
-                    cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
-                    //throw runtime_error("returning...");
-                }
+                //this->distributing_task = true;
+                cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
+                //throw runtime_error("returning...");
             }
         }
         if( (i % this->print_interval == 0 && i != 0 && i >= this->warmup) || this->nowstop) {

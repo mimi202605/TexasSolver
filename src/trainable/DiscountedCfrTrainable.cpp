@@ -16,6 +16,9 @@ DiscountedCfrTrainable::DiscountedCfrTrainable(vector<PrivateCards> *privateCard
     this->r_plus_sum = vector<float>(this->card_number,0.0);
 
     this->cum_r_plus = vector<float>(this->action_number * this->card_number,0.0);
+    // Pre-allocate strategy cache
+    this->current_strategy_cache = vector<float>(this->action_number * this->card_number, 1.0f / this->action_number);
+    this->strategy_dirty = true;
     //this->cum_r_plus_sum = vector<float>(this->card_number);
 }
 
@@ -49,13 +52,32 @@ const vector<float> DiscountedCfrTrainable::getAverageStrategy() {
 }
 
 const vector<float> DiscountedCfrTrainable::getcurrentStrategy() {
-    return this->getcurrentStrategyNoCache();
+    if(this->strategy_dirty) {
+        // Update cache in-place, no allocation
+        if(this->r_plus_sum.empty()){
+            fill(current_strategy_cache.begin(),current_strategy_cache.end(),1.0 / this->action_number);
+        }else {
+            for (int action_id = 0; action_id < action_number; action_id++) {
+                for (int private_id = 0; private_id < this->card_number; private_id++) {
+                    int index = action_id * this->card_number + private_id;
+                    if(this->r_plus_sum[private_id] != 0) {
+                        current_strategy_cache[index] = max(float(0.0),this->r_plus[index]) / this->r_plus_sum[private_id];
+                    }else{
+                        current_strategy_cache[index] = 1.0 / (this->action_number);
+                    }
+                }
+            }
+        }
+        this->strategy_dirty = false;
+    }
+    return this->current_strategy_cache;
 }
 
 void DiscountedCfrTrainable::copyStrategy(shared_ptr<Trainable> other_trainable){
     shared_ptr<DiscountedCfrTrainable> trainable = dynamic_pointer_cast<DiscountedCfrTrainable>(other_trainable);
     this->r_plus.assign(trainable->r_plus.begin(),trainable->r_plus.end());
     this->cum_r_plus.assign(trainable->cum_r_plus.begin(),trainable->cum_r_plus.end());
+    this->strategy_dirty = true;
 }
 
 const vector<float> DiscountedCfrTrainable::getcurrentStrategyNoCache() {
@@ -118,13 +140,28 @@ void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int ite
             // this.cum_r_plus_sum[private_id] += this.cum_r_plus[index];
         }
     }
-    vector<float> current_strategy = this->getcurrentStrategyNoCache();
+    // Inline strategy computation: update cache in-place, then use it for cum_r_plus update
+    // This avoids allocating a new vector each time
+    for (int action_id = 0; action_id < action_number; action_id++) {
+        for (int private_id = 0; private_id < this->card_number; private_id++) {
+            int index = action_id * this->card_number + private_id;
+            if(this->r_plus_sum[private_id] != 0) {
+                this->current_strategy_cache[index] = max(float(0.0),this->r_plus[index]) / this->r_plus_sum[private_id];
+            }else{
+                this->current_strategy_cache[index] = 1.0 / (this->action_number);
+            }
+        }
+    }
+    this->strategy_dirty = false;
+
     float strategy_coef = pow(((float)iteration_number / (iteration_number + 1)),gamma);
+    // Linear CFR: weight cumulative strategy by iteration number for faster convergence
+    float linear_weight = (float)iteration_number;
     for (int action_id = 0;action_id < action_number;action_id ++) {
         for(int private_id = 0;private_id < this->card_number;private_id ++) {
             int index = action_id * this->card_number + private_id;
             this->cum_r_plus[index] *= this->theta;
-            this->cum_r_plus[index] += current_strategy[index] * strategy_coef;// * reach_probs[private_id];
+            this->cum_r_plus[index] += this->current_strategy_cache[index] * strategy_coef * linear_weight;// * reach_probs[private_id];
             //this->cum_r_plus_sum[private_id] += this->cum_r_plus[index] ;
         }
     }
