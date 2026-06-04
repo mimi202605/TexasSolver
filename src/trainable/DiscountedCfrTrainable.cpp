@@ -155,13 +155,11 @@ void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int ite
     this->strategy_dirty = false;
 
     float strategy_coef = pow(((float)iteration_number / (iteration_number + 1)),gamma);
-    // Linear CFR: weight cumulative strategy by iteration number for faster convergence
-    float linear_weight = (float)iteration_number;
     for (int action_id = 0;action_id < action_number;action_id ++) {
         for(int private_id = 0;private_id < this->card_number;private_id ++) {
             int index = action_id * this->card_number + private_id;
             this->cum_r_plus[index] *= this->theta;
-            this->cum_r_plus[index] += this->current_strategy_cache[index] * strategy_coef * linear_weight;// * reach_probs[private_id];
+            this->cum_r_plus[index] += this->current_strategy_cache[index] * strategy_coef;// * reach_probs[private_id];
             //this->cum_r_plus_sum[private_id] += this->cum_r_plus[index] ;
         }
     }

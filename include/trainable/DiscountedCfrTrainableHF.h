@@ -30,6 +30,10 @@ private:
     constexpr static float gamma = 2;
     constexpr static float theta = 0.9f;
     vector<CumRplusStorage> cum_r_plus;
+    // Strategy cache to avoid repeated allocation and recomputation
+    vector<float> current_strategy_cache;
+    vector<float> r_plus_sum_cache;
+    bool strategy_dirty = true;
 public:
     DiscountedCfrTrainableHF(vector<PrivateCards> *privateCards,
                            ActionNode &actionNode);

@@ -316,7 +316,7 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
         vector<PrivateCards> &oppoPrivateCards = (this->ranges[1 - player]);
 
 
-        vector<float> new_reach_probs = vector<float>(oppoPrivateCards.size());
+        vector<float> new_reach_probs(oppoPrivateCards.size());
 
 
 
@@ -417,14 +417,6 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 
     shared_ptr<Trainable> trainable;
 
-    /*
-    if(iter <= this->warmup){
-        vector<int> deals = this->getAllAbstractionDeal(deal);
-        trainable = node->getTrainable(deals[0]);
-    }else{
-        trainable = node->getTrainable(deal);
-    }
-     */
     trainable = node->getTrainable(deal,true,this->use_halffloats);
 
 #ifdef DEBUG
@@ -453,20 +445,24 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     vector<vector<float>> all_action_utility(actions.size());
     int node_player = node->getPlayer();
 
+    // Pre-allocate reach_prob buffer to avoid repeated allocation
+    vector<float> new_reach_prob_buf;
+    if (node_player != player) {
+        new_reach_prob_buf.resize(reach_probs.size());
+    }
+
     vector<vector<float>> results(actions.size());
     for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
 
         if (node_player != player) {
-            vector<float> new_reach_prob = vector<float>(reach_probs.size());
-            for (std::size_t hand_id = 0; hand_id < new_reach_prob.size(); hand_id++) {
+            // Reuse pre-allocated buffer instead of creating new vector each time
+            for (std::size_t hand_id = 0; hand_id < new_reach_prob_buf.size(); hand_id++) {
                 float strategy_prob = current_strategy[hand_id + action_id * node_player_private_cards.size()];
-                new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;
+                new_reach_prob_buf[hand_id] = reach_probs[hand_id] * strategy_prob;
             }
-            //#pragma omp task shared(results,action_id)
-            results[action_id] = this->cfr(player, children[action_id], new_reach_prob, iter,
+            results[action_id] = this->cfr(player, children[action_id], new_reach_prob_buf, iter,
                                            current_board,deal);
         }else {
-            //#pragma omp task shared(results,action_id)
             results[action_id] = this->cfr(player, children[action_id], reach_probs, iter,
                                            current_board,deal);
         }
@@ -787,18 +783,10 @@ void PCfrSolver::train() {
     uint64_t endtime = timeSinceEpochMillisec();
 
     for(int i = 0;i < this->iteration_number;i++){
-        // Alternating updates: only update one player per iteration
-        // This halves the work per iteration and converges faster in practice
-        int player_id = i % this->player_number;
-        this->round_deal = vector<int>{-1,-1,-1,-1};
-        //#pragma omp parallel
-        {
-            //#pragma omp single
-            {
-                //this->distributing_task = true;
-                cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
-                //throw runtime_error("returning...");
-            }
+        for(int player_id = 0;player_id < this->player_number;player_id ++) {
+            // Reset round_deal in-place instead of creating new vector
+            this->round_deal.assign(4, -1);
+            cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
         }
         if( (i % this->print_interval == 0 && i != 0 && i >= this->warmup) || this->nowstop) {
             endtime = timeSinceEpochMillisec();

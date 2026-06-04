@@ -12,6 +12,10 @@ DiscountedCfrTrainableHF::DiscountedCfrTrainableHF(vector<PrivateCards> *private
     this->evs = vector<EvsStorage>(this->action_number * this->card_number, (EvsStorage) 0.0);
     this->r_plus = vector<RplusStorage>(this->action_number * this->card_number, (RplusStorage) 0.0);
     this->cum_r_plus = vector<CumRplusStorage>(this->action_number * this->card_number, (CumRplusStorage) 0.0);
+    // Pre-allocate strategy cache
+    this->current_strategy_cache = vector<float>(this->action_number * this->card_number, 1.0f / this->action_number);
+    this->r_plus_sum_cache = vector<float>(this->card_number, 0.0f);
+    this->strategy_dirty = true;
 }
 
 bool DiscountedCfrTrainableHF::isAllZeros(const vector<float>& input_array) {
@@ -47,13 +51,36 @@ const vector<float> DiscountedCfrTrainableHF::getAverageStrategy() {
 }
 
 const vector<float> DiscountedCfrTrainableHF::getcurrentStrategy() {
-    return this->getcurrentStrategyNoCache();
+    if(this->strategy_dirty) {
+        // Recompute r_plus_sum from r_plus
+        fill(r_plus_sum_cache.begin(), r_plus_sum_cache.end(), 0);
+        for (int action_id = 0; action_id < action_number; action_id++) {
+            for(int private_id = 0; private_id < this->card_number; private_id++){
+                int index = action_id * this->card_number + private_id;
+                r_plus_sum_cache[private_id] += max(float(0.0), (float)this->r_plus[index]);
+            }
+        }
+        // Update strategy cache in-place
+        for (int action_id = 0; action_id < action_number; action_id++) {
+            for (int private_id = 0; private_id < this->card_number; private_id++) {
+                int index = action_id * this->card_number + private_id;
+                if(r_plus_sum_cache[private_id] != 0) {
+                    current_strategy_cache[index] = max(float(0.0), (float)this->r_plus[index]) / r_plus_sum_cache[private_id];
+                }else{
+                    current_strategy_cache[index] = 1.0 / (this->action_number);
+                }
+            }
+        }
+        this->strategy_dirty = false;
+    }
+    return this->current_strategy_cache;
 }
 
 void DiscountedCfrTrainableHF::copyStrategy(shared_ptr<Trainable> other_trainable){
     shared_ptr<DiscountedCfrTrainableHF> trainable = dynamic_pointer_cast<DiscountedCfrTrainableHF>(other_trainable);
     this->r_plus.assign(trainable->r_plus.begin(),trainable->r_plus.end());
     this->cum_r_plus.assign(trainable->cum_r_plus.begin(),trainable->cum_r_plus.end());
+    this->strategy_dirty = true;
 }
 
 const vector<float> DiscountedCfrTrainableHF::getcurrentStrategyNoCache() {
@@ -102,9 +129,8 @@ void DiscountedCfrTrainableHF::updateRegrets(const vector<float>& regrets, int i
     auto alpha_coef = pow(iteration_number, this->alpha);
     alpha_coef = alpha_coef / (1 + alpha_coef);
 
-    vector<float> r_plus_sum = vector<float>(this->r_plus.size());
-    vector<float> r_plus = vector<float>(this->r_plus.size());
-    fill(r_plus_sum.begin(),r_plus_sum.end(),0);
+    // Reuse pre-allocated cache buffers instead of creating new vectors each call
+    fill(r_plus_sum_cache.begin(), r_plus_sum_cache.end(), 0);
     for (int action_id = 0;action_id < action_number;action_id ++) {
         for(int private_id = 0;private_id < this->card_number;private_id ++){
             int index = action_id * this->card_number + private_id;
@@ -118,36 +144,30 @@ void DiscountedCfrTrainableHF::updateRegrets(const vector<float>& regrets, int i
             }else{
                 this_r_plus_of_index *= beta;
             }
-            r_plus_sum[private_id] += max(float(0.0),this_r_plus_of_index);
+            r_plus_sum_cache[private_id] += max(float(0.0),this_r_plus_of_index);
             this->r_plus[index] = this_r_plus_of_index;
-            r_plus[index] = this_r_plus_of_index;
         }
     }
 
-    // inline replacement with less conversion induced precision loss and overhead of
-    // vector<float> current_strategy = this->getcurrentStrategyNoCache();
-    vector<float> current_strategy = vector<float>(this->action_number * this->card_number);
+    // Inline strategy computation into cache, no allocation
     for (int action_id = 0; action_id < action_number; action_id++) {
         for (int private_id = 0; private_id < this->card_number; private_id++) {
             int index = action_id * this->card_number + private_id;
-            if(r_plus_sum[private_id] != 0) {
-                current_strategy[index] = max(float(0.0), r_plus[index]) / r_plus_sum[private_id];
+            if(r_plus_sum_cache[private_id] != 0) {
+                current_strategy_cache[index] = max(float(0.0), (float)this->r_plus[index]) / r_plus_sum_cache[private_id];
             }else{
-                current_strategy[index] = 1.0 / (this->action_number);
+                current_strategy_cache[index] = 1.0 / (this->action_number);
             }
-#ifdef DEBUG
-            if(this->r_plus[index] != this->r_plus[index]) throw runtime_error("nan found");
-#endif
         }
     }
-    // end of inline replacement
+    this->strategy_dirty = false;
 
     float strategy_coef = pow(((float)iteration_number / (iteration_number + 1)),gamma);
     for (int action_id = 0;action_id < action_number;action_id ++) {
         for(int private_id = 0;private_id < this->card_number;private_id ++) {
             int index = action_id * this->card_number + private_id;
             this->cum_r_plus[index] = this->cum_r_plus[index] * this->theta +
-                current_strategy[index] * strategy_coef;// * reach_probs[private_id];
+                current_strategy_cache[index] * strategy_coef;
         }
     }
 }
